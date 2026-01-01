@@ -1,11 +1,9 @@
-import rateLimit from "express-rate-limit";
-
-
 // doer-backend/index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import rateLimit from "express-rate-limit";
 
 dotenv.config();
 
@@ -23,11 +21,18 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// ✅ Healthcheck (DOIT répondre)
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
 // ✅ Sécurité simple: exiger une clé Doer dans un header
 function requireDoerKey(req, res, next) {
   const expected = process.env.DOER_INTERNAL_KEY;
   if (!expected) {
-    return res.status(500).json({ error: "Server misconfigured: missing DOER_INTERNAL_KEY" });
+    return res
+      .status(500)
+      .json({ error: "Server misconfigured: missing DOER_INTERNAL_KEY" });
   }
   const got = req.header("x-doer-key");
   if (!got || got !== expected) {
@@ -35,12 +40,6 @@ function requireDoerKey(req, res, next) {
   }
   next();
 }
-
-// ✅ (optionnel mais utile) Healthcheck
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-µ
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -52,11 +51,6 @@ function truncateText(text, maxChars = 8000) {
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-
-
 app.post("/summarize", requireDoerKey, async (req, res) => {
   try {
     const { text } = req.body;
@@ -67,40 +61,32 @@ app.post("/summarize", requireDoerKey, async (req, res) => {
     const cleanText = truncateText(text);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // ou gpt-4o si tu veux plus costaud
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: `
-            Tu es Doer, un assistant exécutif ultra exigeant.
+          content: `Tu es Doer, un assistant exécutif ultra exigeant.
 
-            RÈGLES ABSOLUES :
-            - Tu aides l'utilisateur à GAGNER DU TEMPS.
-            - Tu ne proposes une action QUE si elle est réellement utile.
-            - Si le texte est seulement informatif, tu ne proposes AUCUNE action.
+RÈGLES ABSOLUES :
+- Tu aides l'utilisateur à GAGNER DU TEMPS.
+- Tu ne proposes une action QUE si elle est réellement utile.
+- Si le texte est seulement informatif, tu ne proposes AUCUNE action.
 
-            TA MISSION :
-            1) Produire un résumé exécutif clair (max 5 bullet points).
-            2) Identifier les actions IMPORTANTES à faire, si et seulement si :
-              - quelqu’un attend une réponse ou une décision
-              - il y a une échéance ou un suivi implicite
-              - une opportunité ou un risque existe si on n’agit pas
+TA MISSION :
+1) Produire un résumé exécutif clair (max 5 bullet points).
+2) Identifier les actions IMPORTANTES à faire, si et seulement si :
+  - quelqu’un attend une réponse ou une décision
+  - il y a une échéance ou un suivi implicite
+  - une opportunité ou un risque existe si on n’agit pas
 
-            NE JAMAIS :
-            - proposer des actions vagues ("réfléchir", "analyser", "se souvenir")
-            - transformer une information en tâche inutile
+NE JAMAIS :
+- proposer des actions vagues ("réfléchir", "analyser", "se souvenir")
+- transformer une information en tâche inutile
 
-            FORMAT STRICT (JSON valide uniquement) :
-            {
-              "summary": ["..."],
-              "suggestedActions": ["..."]
-            }
-            `
-          },
-        {
-          role: "user",
-          content: `Texte à analyser :\n\n${cleanText}`,
+FORMAT STRICT (JSON valide uniquement) :
+{"summary":["..."],"suggestedActions":["..."]}`,
         },
+        { role: "user", content: `Texte à analyser :\n\n${cleanText}` },
       ],
       temperature: 0.2,
     });
@@ -110,24 +96,15 @@ app.post("/summarize", requireDoerKey, async (req, res) => {
     let data;
     try {
       data = JSON.parse(raw);
-    } catch (e) {
-      console.error("Erreur de parsing JSON, réponse brute :", raw);
-      // fallback ultra simple
-      data = {
-        summary: [raw],
-        suggestedActions: [],
-      };
+    } catch {
+      data = { summary: [raw], suggestedActions: [] };
     }
 
-    // Sécurise un minimum les champs
     if (!Array.isArray(data.summary)) data.summary = [String(data.summary || "")];
     if (!Array.isArray(data.suggestedActions))
       data.suggestedActions = [String(data.suggestedActions || "")];
 
-    res.json({
-      summary: data.summary,
-      suggestedActions: data.suggestedActions,
-    });
+    res.json({ summary: data.summary, suggestedActions: data.suggestedActions });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur interne côté Doer API" });
@@ -136,6 +113,5 @@ app.post("/summarize", requireDoerKey, async (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Doer backend running on http://localhost:${port}`);
+  console.log(`Doer backend running on port ${port}`);
 });
-
