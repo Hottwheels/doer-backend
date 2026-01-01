@@ -52,6 +52,11 @@ function truncateText(text, maxChars = 8000) {
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
+
 app.post("/summarize", requireDoerKey, async (req, res) => {
   try {
     const { text } = req.body;
