@@ -1,3 +1,6 @@
+import rateLimit from "express-rate-limit";
+
+
 // doer-backend/index.js
 import express from "express";
 import cors from "cors";
@@ -10,6 +13,35 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ✅ Rate limit (anti-spam)
+app.set("trust proxy", 1); // important derrière un proxy (Render)
+const limiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 30, // 30 requêtes / 10 min / IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
+// ✅ Sécurité simple: exiger une clé Doer dans un header
+function requireDoerKey(req, res, next) {
+  const expected = process.env.DOER_INTERNAL_KEY;
+  if (!expected) {
+    return res.status(500).json({ error: "Server misconfigured: missing DOER_INTERNAL_KEY" });
+  }
+  const got = req.header("x-doer-key");
+  if (!got || got !== expected) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+// ✅ (optionnel mais utile) Healthcheck
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+µ
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -20,7 +52,7 @@ function truncateText(text, maxChars = 8000) {
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
-app.post("/summarize", async (req, res) => {
+app.post("/summarize", requireDoerKey, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || typeof text !== "string") {
